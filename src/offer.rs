@@ -1,6 +1,6 @@
 
 use anyhow::Result;
-use ws::client::Client;
+use signaler::client::Client;
 use colored::*;
 
 #[tokio::main]

@@ -12,6 +12,7 @@ pub struct Client {
     rx_offer: Option<UnboundedReceiver<SessionDescription>>,
     rx_answer: Option<UnboundedReceiver<SessionDescription>>,
     rx: Option<UnboundedReceiver<SessionDescription>>,
+    rx_data: Option<UnboundedReceiver<String>>,
 }
 
 impl Client {
@@ -23,6 +24,7 @@ impl Client {
             rx_offer: None,
             rx_answer: None,
             rx: None,
+            rx_data: None,
         }
     }
 
@@ -35,17 +37,32 @@ impl Client {
         write.send(Message::Text(data.into())).await?;
         self.write = Some(write);
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
+        let (tx_str, rx_str) = tokio::sync::mpsc::unbounded_channel::<String>();
         self.rx = Some(rx);
+        self.rx_data = Some(rx_str);
+
         //let (offer_tx, offer_rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
         //let (answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
-        let tx2 = tx.clone();
+        //let tx2 = tx.clone();
         //self.rx_answer = Some(answer_rx);
         //self.rx_offer = Some(offer_rx);
         tokio::spawn(async move {
-            Client::receive(read, tx2).await;
+            Client::receive_data(read, tx_str).await;
         });
         //_=  tx.send(Command::Connected);
         return Ok(());
+    }
+
+    pub async fn wait_data(&mut self) -> Result<SessionDescription, anyhow::Error> {
+        let rx = self.rx_data.as_mut().ok_or_else(|| anyhow!("no offer receiver"))?;
+        match rx.recv().await {
+            Some(data) => match serde_json::from_str::<MyMessage>(&data) {
+                Ok(MyMessage::Offer(offer)) => Ok(offer),
+                Ok(MyMessage::Answer(answer)) => Ok(answer),
+                _ => Err(anyhow!("invalid message")),
+            },
+            None => Err(anyhow!("offer channel closed")),
+        }
     }
 
     pub async fn wait_offer(&mut self) -> Result<SessionDescription, anyhow::Error> {
@@ -109,6 +126,21 @@ impl Client {
         Ok(())
     }
 
+    pub async fn send_data(&mut self, target: &str, data: String) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            let answer = MyMessage::Answer(SessionDescription {
+                sender: self.name.clone(),
+                target: target.to_string(),
+                description: data.clone(),
+            });
+            let data = serde_json::to_string::<MyMessage>(&answer).unwrap();
+            write.send(Message::Text(data.into())).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
+    }
+
     pub async fn pinging(&mut self, interval: u32) -> Result<(), anyhow::Error> {
         if let Some(ref mut write) = self.write {
             loop {
@@ -119,6 +151,26 @@ impl Client {
             return Err(anyhow!("write is None"));
         }
         //Ok(())
+    }
+
+    async fn receive_data(
+        mut reader: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, 
+        sender: tokio::sync::mpsc::UnboundedSender<String>,
+    ) {
+        while let Some(msg) = reader.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    let data = text.to_string();
+                    _ = sender.send(data);
+                }
+                Ok(Message::Close(_)) => {
+                    //_ = sender.send(Command::Disconected);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        
     }
 
     async fn receive(
