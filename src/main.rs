@@ -81,12 +81,25 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
+                                            println!("[OFFER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }
                                 }
                             },
-                            MyMessage::Answer(_) => {},
+                            MyMessage::Answer(sdp) => {
+                                let target = sdp.target;
+                                let client_list = clients.read().await;
+                                for (addr, client) in client_list.iter() {
+                                    if let Some(client_name) = client.name() {
+                                        if target == client_name {
+                                            send_message(&clients, Message::Text(text), *addr).await;
+                                            println!("[ANSWER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
+                                            break;
+                                        }
+                                    }
+                                }
+                            },
                         }
                     },
                     Err(_) => {

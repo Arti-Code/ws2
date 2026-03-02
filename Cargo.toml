@@ -1,6 +1,6 @@
 [package]
 name = "ws"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Artur Gwoździowski"]
 edition = "2024"
 
@@ -23,3 +23,11 @@ path ="src/main.rs"
 [[bin]]
 name ="client"
 path ="src/cli.rs"
+
+[[bin]]
+name ="answer"
+path ="src/answer.rs"
+
+[[bin]]
+name ="offer"
+path ="src/offer.rs"
