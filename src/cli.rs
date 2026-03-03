@@ -25,7 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = "ws://127.0.0.1:8080";
     let mut client = Client::new(name, url);
     let mut recv = client.connect().await.expect("connection error");
+
+    
     tokio::spawn(async move {
+        let sdp = client.wait_offer().await.unwrap();
+        println!("{} from {} ({})", "[OFFER]: ".bold().cyan(), sdp.sender, sdp.description);
+    }).await;
+    /* tokio::spawn(async move {
         while let Some(msg) = recv.recv().await {
             match msg {
                 MyMessage::Offer(sdp) => {
@@ -38,12 +44,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 
             }
         }
-    });
+    }); */
+    
     //client.pinging(3).await?;
     loop {
         client.offer(target).await?;
         tokio::time::sleep(Duration::from_secs(5)).await;
 
     }
+
     //Ok(())
 }

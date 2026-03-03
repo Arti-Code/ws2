@@ -5,30 +5,24 @@ use tokio::sync::RwLock;
 //use tokio_tungstenite::tungstenite::http::version;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
-use ws::command::MyMessage;
+use signaler::command::MyMessage;
 use std::collections::HashMap;
 use colored::*;
 
 
 //type Clients = Arc<RwLock<HashMap<SocketAddr, tokio::sync::mpsc::UnboundedSender<Message>>>>;
-type Clients = Arc<RwLock<HashMap<SocketAddr, Client>>>;
+type Peers = Arc<RwLock<HashMap<SocketAddr, Peer>>>;
 
 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut version = String::from("version: ");
-    version.push_str(std::env!("CARGO_PKG_VERSION"));
-    let author= std::env!("CARGO_PKG_AUTHORS");
-    println!("{}", "-=SIGNALING SERVER=-".to_string().bold().underline().cyan());
-    println!("{}", version.cyan());
-    println!("{}", author.blue());
+    init();
     let addr = "0.0.0.0:8080";
     let listener = TcpListener::bind(&addr).await?;
-    println!("");
     println!("{}{}", "listening on: ".to_string().bold().bright_green(), addr.bold().bright_green());
 
-    let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+    let clients: Peers = Arc::new(RwLock::new(HashMap::new()));
 
     while let Ok((stream, addr)) = listener.accept().await {
         tokio::spawn(handle_connection(stream, addr, clients.clone()));
@@ -40,18 +34,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
-    clients: Clients,
+    clients: Peers,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}{}", "new connection: ".green().bold(), addr.to_string().green().bold());
 
     let ws_stream = accept_async(stream).await?;
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let client=  Client::new(tx);
-    // Store the client
+    let client=  Peer::new(tx);
     clients.write().await.insert(addr, client);
 
-    // Spawn task to handle outgoing messages
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if ws_sender.send(msg).await.is_err() {
@@ -59,8 +51,8 @@ async fn handle_connection(
             }
         }
     });
+
     let mut sender = format!("[{}]: ", addr.to_string());
-    // Handle incoming messages
     while let Some(msg) = ws_receiver.next().await {
         if let Some(name) = clients.read().await.get(&addr).unwrap().name() {
             sender = format!("[{}]: ", name);
@@ -81,24 +73,37 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
+                                            println!("[OFFER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }
                                 }
                             },
-                            MyMessage::Answer(_) => {},
+                            MyMessage::Answer(sdp) => {
+                                let target = sdp.target;
+                                let client_list = clients.read().await;
+                                for (addr, client) in client_list.iter() {
+                                    if let Some(client_name) = client.name() {
+                                        if target == client_name {
+                                            send_message(&clients, Message::Text(text), *addr).await;
+                                            println!("[ANSWER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
+                                            break;
+                                        }
+                                    }
+                                }
+                            },
                         }
                     },
                     Err(_) => {
                         println!("{}{}", sender.bold(), text.to_string());
-                        broadcast_message(&clients, Message::Text(text), addr).await;
+                        send_message(&clients, Message::Text(text), addr).await;
                     }
                 }
                 
             }
             Ok(Message::Binary(bin)) => {
                 println!("{}[BYTES] {}", sender.bold(), bin.len());
-                broadcast_message(&clients, Message::Binary(bin), addr).await;
+                send_message(&clients, Message::Binary(bin), addr).await;
             }
             Ok(Message::Close(_)) => {
                 println!("{}{}", sender.bold(), "disconnected".red().bold());
@@ -125,7 +130,6 @@ async fn handle_connection(
         }
     }
 
-    // Clean up
     send_task.abort();
     clients.write().await.remove(&addr);
     println!("{}{}", sender.bold(), "removed".to_string().bright_red());
@@ -133,16 +137,7 @@ async fn handle_connection(
     Ok(())
 }
 
-async fn broadcast_message(clients: &Clients, msg: Message, sender: SocketAddr) {
-    let clients = clients.read().await;
-    for (addr, tx) in clients.iter() {
-        if *addr == sender {
-            tx.send(msg.clone()).ok();
-        }
-    }
-}
-
-async fn send_message(clients: &Clients, msg: Message, receiver: SocketAddr) {
+async fn send_message(clients: &Peers, msg: Message, receiver: SocketAddr) {
     let clients = clients.read().await;
     for (addr, tx) in clients.iter() {
         if *addr == receiver {
@@ -151,13 +146,22 @@ async fn send_message(clients: &Clients, msg: Message, receiver: SocketAddr) {
     }
 }
 
+fn init() {
+    let mut version = String::from("version: ");
+    version.push_str(std::env!("CARGO_PKG_VERSION"));
+    let author= std::env!("CARGO_PKG_AUTHORS");
+    println!("{}", "-=SIGNALING SERVER=-".to_string().bold().underline().cyan());
+    println!("{}", version.cyan());
+    println!("{}", author.blue());
+    println!("");
+}
 
-struct Client {
+struct Peer {
     name: Option<String>,
     sender: tokio::sync::mpsc::UnboundedSender<Message>,
 }
 
-impl Client {
+impl Peer {
     pub fn new(sender: tokio::sync::mpsc::UnboundedSender<Message>) -> Self {
         Self {
             name: None,

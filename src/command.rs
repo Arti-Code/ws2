@@ -49,3 +49,4 @@ pub fn generate_description() -> String {
     let data: String = rng.sample_iter(Alphanumeric).take(16).map(|char| char as char).collect();
     return data;
 }
+

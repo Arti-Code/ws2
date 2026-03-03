@@ -539,6 +539,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "signaler"
+version = "0.3.6"
+dependencies = [
+ "anyhow",
+ "colored",
+ "futures-util",
+ "rand 0.10.0",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -983,22 +999,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "ws"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "colored",
- "futures-util",
- "rand 0.10.0",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
