@@ -1,6 +1,6 @@
 [package]
 name = "signaler"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Artur Gwoździowski"]
 edition = "2024"
 
