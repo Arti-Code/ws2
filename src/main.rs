@@ -73,7 +73,7 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
-                                            println!("[OFFER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
+                                            println!("{}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }
@@ -86,7 +86,7 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
-                                            println!("[ANSWER]: {}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
+                                            println!("{}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }

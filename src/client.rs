@@ -36,9 +36,9 @@ impl Client {
         let data = serde_json::to_string::<MyMessage>(&msg).unwrap();
         write.send(Message::Text(data.into())).await?;
         self.write = Some(write);
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
+        //let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
         let (tx_str, rx_str) = tokio::sync::mpsc::unbounded_channel::<String>();
-        self.rx = Some(rx);
+        //self.rx = Some(rx);
         self.rx_data = Some(rx_str);
 
         //let (offer_tx, offer_rx) = tokio::sync::mpsc::unbounded_channel::<SessionDescription>();
@@ -101,7 +101,7 @@ impl Client {
             let offer = MyMessage::Offer(SessionDescription {
                 sender: self.name.clone(),
                 target: target.to_string(),
-                description: generate_description(),
+                description: generate_description(32),
             });
             let data = serde_json::to_string::<MyMessage>(&offer).unwrap();
             write.send(Message::Text(data.into())).await?;
@@ -116,7 +116,7 @@ impl Client {
             let answer = MyMessage::Answer(SessionDescription {
                 sender: self.name.clone(),
                 target: target.to_string(),
-                description: generate_description(),
+                description: generate_description(32),
             });
             let data = serde_json::to_string::<MyMessage>(&answer).unwrap();
             write.send(Message::Text(data.into())).await?;
@@ -173,7 +173,7 @@ impl Client {
         
     }
 
-    async fn receive(
+    async fn _receive(
         mut reader: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, 
         sender: tokio::sync::mpsc::UnboundedSender<SessionDescription>,
         //tx_offer: tokio::sync::mpsc::UnboundedSender<SessionDescription>,

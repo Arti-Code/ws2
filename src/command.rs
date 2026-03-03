@@ -44,9 +44,9 @@ pub enum MyMessage {
 }
 
 
-pub fn generate_description() -> String {
+pub fn generate_description(n: usize) -> String {
     let rng = rng();
-    let data: String = rng.sample_iter(Alphanumeric).take(16).map(|char| char as char).collect();
+    let data: String = rng.sample_iter(Alphanumeric).take(n).map(|char| char as char).collect();
     return data;
 }
 
