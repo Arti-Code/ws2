@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 //use tokio_tungstenite::tungstenite::http::version;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
-use signaler::command::MyMessage;
+use signaler::command::{DescriptionType, SignalMessage};
 use std::collections::HashMap;
 use colored::*;
 
@@ -59,34 +59,25 @@ async fn handle_connection(
         }
         match msg {
             Ok(Message::Text(text)) => {
-                match serde_json::from_str::<MyMessage>(&text.clone().to_string()) {
+                match serde_json::from_str::<SignalMessage>(&text.clone().to_string()) {
                     Ok(cmd) => {
                         match cmd {
-                            MyMessage::Register(name) => {
+                            SignalMessage::Register(name) => {
                                 clients.write().await.entry(addr).and_modify(|c| c.set_name(name.as_str()));
                                 println!("{}{}{}", sender.bold(), "registered as ".to_string().yellow(), name.bold().yellow());
                             },
-                            MyMessage::Offer(sdp) => {
+                            SignalMessage::SessionDescription(sdp) => {
                                 let target = sdp.target;
+                                let kind = match sdp.kind {
+                                    DescriptionType::Offer => "OFFER".to_string(),
+                                    DescriptionType::Answer => "ANSWER".to_string(),
+                                };
                                 let client_list = clients.read().await;
                                 for (addr, client) in client_list.iter() {
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
-                                            println!("{}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
-                                            break;
-                                        }
-                                    }
-                                }
-                            },
-                            MyMessage::Answer(sdp) => {
-                                let target = sdp.target;
-                                let client_list = clients.read().await;
-                                for (addr, client) in client_list.iter() {
-                                    if let Some(client_name) = client.name() {
-                                        if target == client_name {
-                                            send_message(&clients, Message::Text(text), *addr).await;
-                                            println!("{}{}{}", sender.bold(), " ==> ".to_string(), target.bold());
+                                            println!("{}{}{}{}{}", sender.bold(), " ==".to_string(), kind, "==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }
