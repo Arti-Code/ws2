@@ -1,11 +1,11 @@
 [package]
 name = "signaler"
-version = "0.3.6"
+version = "0.4.0"
 authors = ["Artur Gwoździowski"]
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.50.0", features = ["full"] }
 tokio-tungstenite = "0.28"
 futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -16,18 +16,14 @@ anyhow = "1.0"
 colored = "3.1.1"
 rand = "0.10.0"
 
-[[bin]]
-name ="server"
-path ="src/main.rs"
-
-[[bin]]
-name ="client"
-path ="src/cli.rs"
-
-[[bin]]
-name ="answer"
-path ="src/answer.rs"
-
-[[bin]]
-name ="offer"
-path ="src/offer.rs"
+#[[bin]]
+#name ="server"
+#path ="src/main.rs"
+#
+#[[bin]]
+#name ="answer"
+#path ="src/answer.rs"
+#
+#[[bin]]
+#name ="offer"
+#path ="src/offer.rs"
