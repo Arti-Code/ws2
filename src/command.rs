@@ -34,9 +34,18 @@ pub struct SessionDescription {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextMessage {
+    pub sender: String,
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SignalMessage {
     Register(String),
     SessionDescription(SessionDescription),
+    Echo(String),
+    Text(TextMessage)
     //Offer(SessionDescription),
     //Answer(SessionDescription),
 }

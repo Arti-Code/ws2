@@ -52,7 +52,7 @@ async fn handle_connection(
         }
     });
 
-    let mut sender = format!("[{}]: ", addr.to_string());
+    let mut sender = format!("{} ", addr.to_string());
     while let Some(msg) = ws_receiver.next().await {
         if let Some(name) = clients.read().await.get(&addr).unwrap().name() {
             sender = format!("[{}]: ", name);
@@ -78,6 +78,23 @@ async fn handle_connection(
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
                                             println!("{}{}{}{}{}", sender.bold(), " ==".to_string(), kind, "==> ".to_string(), target.bold());
+                                            break;
+                                        }
+                                    }
+                                }
+                            },
+                            SignalMessage::Echo(s) => {
+                                println!("{}{}", sender.bold(), s.to_string());
+                                send_message(&clients, Message::Text(s.into()), addr).await;
+                            },
+                            SignalMessage::Text(text_msg) => {
+                                let target = text_msg.target;
+                                let client_list = clients.read().await;
+                                for (addr, client) in client_list.iter() {
+                                    if let Some(client_name) = client.name() {
+                                        if target == client_name {
+                                            send_message(&clients, Message::Text(text_msg.message.into()), *addr).await;
+                                            println!("{}{}{}", sender.bold(), " ==[message]==> ".to_string(), target.bold());
                                             break;
                                         }
                                     }
