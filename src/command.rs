@@ -43,6 +43,7 @@ pub struct TextMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SignalMessage {
     Register(String),
+    SetLogger,
     SessionDescription(SessionDescription),
     Echo(String),
     Text(TextMessage)

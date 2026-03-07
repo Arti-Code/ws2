@@ -36,12 +36,12 @@ async fn handle_connection(
     addr: SocketAddr,
     clients: Peers,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("{}{}", "new connection: ".green().bold(), addr.to_string().green().bold());
-
+    let s = format!("{}{}", "new connection: ".green().bold(), addr.to_string().green().bold());
+    println!("{}", s);
     let ws_stream = accept_async(stream).await?;
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let client=  Peer::new(tx);
+    let client=  Peer::new(tx, false);
     clients.write().await.insert(addr, client);
 
     let send_task = tokio::spawn(async move {
@@ -57,6 +57,7 @@ async fn handle_connection(
         if let Some(name) = clients.read().await.get(&addr).unwrap().name() {
             sender = format!("[{}]: ", name);
         }
+        let mut s = String::new();
         match msg {
             Ok(Message::Text(text)) => {
                 match serde_json::from_str::<SignalMessage>(&text.clone().to_string()) {
@@ -64,7 +65,13 @@ async fn handle_connection(
                         match cmd {
                             SignalMessage::Register(name) => {
                                 clients.write().await.entry(addr).and_modify(|c| c.set_name(name.as_str()));
-                                println!("{}{}{}", sender.bold(), "registered as ".to_string().yellow(), name.bold().yellow());
+                                s = format!("{}{}{}", sender.bold(), "registered as ".to_string().yellow(), name.bold().yellow());
+                                println!("{}", s);
+                            },
+                            SignalMessage::SetLogger => {
+                                clients.write().await.entry(addr).and_modify(|c| c.set_logger(true));
+                                s = format!("{}{}", sender.bold(), "set as logger".yellow());
+                                println!("{}", s);
                             },
                             SignalMessage::SessionDescription(sdp) => {
                                 let target = sdp.target;
@@ -77,15 +84,17 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
-                                            println!("{}{}{}{}{}", sender.bold(), " ==".to_string(), kind, "==> ".to_string(), target.bold());
+                                            s = format!("{}{}{}{}{}", sender.bold(), " ==".to_string(), kind, "==> ".to_string(), target.bold());
+                                            println!("{}", s);
                                             break;
                                         }
                                     }
                                 }
                             },
-                            SignalMessage::Echo(s) => {
-                                println!("{}{}", sender.bold(), s.to_string());
-                                send_message(&clients, Message::Text(s.into()), addr).await;
+                            SignalMessage::Echo(echo) => {
+                                s = format!("{}{}", sender.bold(), echo.to_string());
+                                println!("{}", s);
+                                send_message(&clients, Message::Text(echo.into()), addr).await;
                             },
                             SignalMessage::Text(text_msg) => {
                                 let target = text_msg.target;
@@ -94,7 +103,8 @@ async fn handle_connection(
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text_msg.message.into()), *addr).await;
-                                            println!("{}{}{}", sender.bold(), " ==[message]==> ".to_string(), target.bold());
+                                            s = format!("{}{}{}", sender.bold(), " ==[message]==> ".to_string(), target.bold());
+                                            println!("{}", s);
                                             break;
                                         }
                                     }
@@ -103,44 +113,53 @@ async fn handle_connection(
                         }
                     },
                     Err(_) => {
-                        println!("{}{}", sender.bold(), text.to_string());
+                        s = format!("{}{}", sender.bold(), text.to_string());
+                        println!("{}", s);
                         send_message(&clients, Message::Text(text), addr).await;
                     }
                 }
-                
             }
             Ok(Message::Binary(bin)) => {
-                println!("{}[BYTES] {}", sender.bold(), bin.len());
+                s = format!("{}[BYTES] {}", sender.bold(), bin.len());
+                println!("{}", s);
                 send_message(&clients, Message::Binary(bin), addr).await;
             }
             Ok(Message::Close(_)) => {
-                println!("{}{}", sender.bold(), "disconnected".red().bold());
+                s = format!("{}{}", sender.bold(), "disconnected".red().bold());
+                println!("{}", s);
                 break;
             }
             Ok(Message::Ping(data)) => {
+                s = format!("{}{}", sender.bold(), "ping".blue().bold());
                 if let Some(tx) = clients.read().await.get(&addr) {
                     tx.send(Message::Pong(data)).ok();
                 }
             }
-            Ok(Message::Pong(_)) => {}
+            Ok(Message::Pong(_)) => {
+                s = format!("{}{}", sender.bold(), "pong".blue().bold());
+            }
             Ok(Message::Frame(frame)) => {
                 if let Ok(text) = frame.into_text() {
-                    println!("{}[FRAME] {}", sender.bold(), text.to_string());
+                    s = format!("{}[FRAME] {}", sender.bold(), text.to_string());
+                    println!("{}", s);
                     if let Some(tx) = clients.read().await.get(&addr) {
                         tx.send(Message::Text(text)).ok();
                     }
                 }
             }
             Err(e) => {
-                eprintln!("{}{}", sender.bold().red(), e);
+                s = format!("{}{}", sender.bold().red(), e);
+                println!("{}", s);
                 break;
             }
         }
+        if !s.is_empty() { broadcast_log(&clients, &s.clone()).await; }
     }
 
     send_task.abort();
     clients.write().await.remove(&addr);
-    println!("{}{}", sender.bold(), "removed".to_string().bright_red());
+    let s = format!("{}{}", sender.bold(), "removed".to_string().bright_red());
+    println!("{}", s);
 
     Ok(())
 }
@@ -150,6 +169,15 @@ async fn send_message(clients: &Peers, msg: Message, receiver: SocketAddr) {
     for (addr, tx) in clients.iter() {
         if *addr == receiver {
             tx.send(msg.clone()).ok();
+        }
+    }
+}
+
+async fn broadcast_log(clients: &Peers, log: &str) {
+    let clients = clients.read().await;
+    for (_, peer) in clients.iter() {
+        if peer.is_logger() {
+            peer.send(Message::Text(log.into())).ok();
         }
     }
 }
@@ -167,13 +195,15 @@ fn init() {
 struct Peer {
     name: Option<String>,
     sender: tokio::sync::mpsc::UnboundedSender<Message>,
+    logger: bool,
 }
 
 impl Peer {
-    pub fn new(sender: tokio::sync::mpsc::UnboundedSender<Message>) -> Self {
+    pub fn new(sender: tokio::sync::mpsc::UnboundedSender<Message>, logger: bool) -> Self {
         Self {
             name: None,
             sender,
+            logger,
         }
     }
 
@@ -187,5 +217,13 @@ impl Peer {
 
     pub fn send(&self, message: Message) -> Result<(), tokio::sync::mpsc::error::SendError<Message>> {
         self.sender.send(message)
+    }
+
+    pub fn is_logger(&self) -> bool {
+        self.logger
+    }
+
+    pub fn set_logger(&mut self, logger: bool) {
+        self.logger = logger;
     }
 }

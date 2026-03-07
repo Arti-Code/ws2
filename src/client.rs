@@ -18,6 +18,7 @@ type SignalReceiver = tokio::sync::mpsc::UnboundedReceiver<String>;
 type WebSocketWrite = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type WebSocketRead = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
+
 pub struct Client {
     name: String,
     write: Option<WebSocketWrite>,
@@ -56,6 +57,21 @@ impl Client {
         match rx.recv().await {
             Some(data) => match serde_json::from_str::<SignalMessage>(&data) {
                 Ok(SignalMessage::SessionDescription(sd)) => Ok(sd),
+                _ => {
+                    dbg!(data);
+                    Err(anyhow!("invalid message"))
+                },
+            },
+            None => Err(anyhow!("connection lost")),
+        }
+    }
+
+    pub async fn wait_text(&mut self) -> Result<TextMessage, anyhow::Error> {
+        let rx = self.rx_data.as_mut()
+        .ok_or_else(|| anyhow!("no offer receiver"))?;
+        match rx.recv().await {
+            Some(data) => match serde_json::from_str::<SignalMessage>(&data) {
+                Ok(SignalMessage::Text(tm)) => Ok(tm),
                 _ => Err(anyhow!("invalid message")),
             },
             None => Err(anyhow!("connection lost")),
@@ -80,6 +96,26 @@ impl Client {
         Ok(())
     }
 
+    pub async fn set_logger(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            let message = SignalMessage::SetLogger;
+            let data = serde_json::to_string::<SignalMessage>(&message).unwrap();
+            write.send(Message::Text(data.into())).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
+    }
+
+    pub async fn send_close(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            write.send(Message::Close(None)).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
+    }
+
     async fn receive_data(mut reader: WebSocketRead, sender: SignalSender) {
         while let Some(msg) = reader.next().await {
             match msg {
@@ -94,6 +130,22 @@ impl Client {
                 _ => {}
             }
         }
-        
+    }
+
+    pub async fn send_text(&mut self, target: &str, data: &str) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            let msg = SignalMessage::Text(
+                TextMessage {
+                    sender: self.name.clone(),
+                    target: target.to_string(),
+                    message: data.to_string(),
+                }
+            );
+            let data = serde_json::to_string::<SignalMessage>(&msg).unwrap();
+            write.send(Message::Text(data.into())).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
     }
 }
