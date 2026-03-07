@@ -72,10 +72,17 @@ impl Client {
         match rx.recv().await {
             Some(data) => match serde_json::from_str::<SignalMessage>(&data) {
                 Ok(SignalMessage::Text(tm)) => Ok(tm),
-                _ => Err(anyhow!("invalid message")),
+                _ => {
+                    dbg!(data);
+                    Err(anyhow!("invalid message"))
+                },
             },
             None => Err(anyhow!("connection lost")),
         }
+    }
+
+    pub fn get_receiver(&mut self) -> Option<SignalReceiver> {
+        self.rx_data.take()
     }
 
     pub async fn send_data(&mut self, target: &str, data: String, kind: DescriptionType) -> Result<(), anyhow::Error> {

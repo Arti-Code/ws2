@@ -2,18 +2,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
-//use tokio_tungstenite::tungstenite::http::version;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
 use signaler::command::{DescriptionType, SignalMessage};
 use std::collections::HashMap;
 use colored::*;
 
-
-//type Clients = Arc<RwLock<HashMap<SocketAddr, tokio::sync::mpsc::UnboundedSender<Message>>>>;
 type Peers = Arc<RwLock<HashMap<SocketAddr, Peer>>>;
-
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,21 +16,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "0.0.0.0:8080";
     let listener = TcpListener::bind(&addr).await?;
     println!("{}{}", "listening on: ".to_string().bold().bright_green(), addr.bold().bright_green());
-
     let clients: Peers = Arc::new(RwLock::new(HashMap::new()));
-
     while let Ok((stream, addr)) = listener.accept().await {
         tokio::spawn(handle_connection(stream, addr, clients.clone()));
     }
-
     Ok(())
 }
 
-async fn handle_connection(
-    stream: TcpStream,
-    addr: SocketAddr,
-    clients: Peers,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers) 
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let s = format!("{}{}", "new connection: ".green().bold(), addr.to_string().green().bold());
     println!("{}", s);
     let ws_stream = accept_async(stream).await?;
@@ -46,9 +35,7 @@ async fn handle_connection(
 
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            if ws_sender.send(msg).await.is_err() {
-                break;
-            }
+            if ws_sender.send(msg).await.is_err() { break; }
         }
     });
 
@@ -156,11 +143,11 @@ async fn handle_connection(
         if !s.is_empty() { broadcast_log(&clients, &s.clone()).await; }
     }
 
+    let s = format!("{}{}", sender.bold(), "removed".to_string().bright_red());
+    broadcast_log(&clients, &s.clone()).await;
+    println!("{}", s);
     send_task.abort();
     clients.write().await.remove(&addr);
-    let s = format!("{}{}", sender.bold(), "removed".to_string().bright_red());
-    println!("{}", s);
-
     Ok(())
 }
 
