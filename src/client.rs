@@ -24,6 +24,7 @@ pub struct Client {
     write: Option<WebSocketWrite>,
     url: String,
     rx_data: Option<SignalReceiver>,
+    tx_data: Option<SignalSender>,
 }
 
 impl Client {
@@ -33,6 +34,7 @@ impl Client {
             write: None,
             url: url.to_string(),
             rx_data: None,
+            tx_data: None,
         }
     }
 
@@ -45,10 +47,26 @@ impl Client {
         self.write = Some(write);
         let (tx_str, rx_str) = tokio::sync::mpsc::unbounded_channel::<String>();
         self.rx_data = Some(rx_str);
+        self.tx_data = Some(tx_str.clone());
         tokio::spawn(async move {
             Client::receive_data(read, tx_str).await;
         });
         return Ok(());
+    }
+
+    pub async fn wait_signal(&mut self) -> Result<SignalMessage, anyhow::Error> {
+        let rx = self.rx_data.as_mut()
+        .ok_or_else(|| anyhow!("no offer receiver"))?;
+        match rx.recv().await {
+            Some(data) => match serde_json::from_str::<SignalMessage>(&data) {
+                Ok(signal) => Ok(signal),
+                _ => {
+                    dbg!(data);
+                    Err(anyhow!("invalid message"))
+                },
+            },
+            None => Err(anyhow!("connection lost")),
+        }
     }
 
     pub async fn wait_data(&mut self) -> Result<SessionDescription, anyhow::Error> {
@@ -83,6 +101,10 @@ impl Client {
 
     pub fn get_receiver(&mut self) -> Option<SignalReceiver> {
         self.rx_data.take()
+    }
+
+    pub fn get_sender(&self) -> Option<SignalSender> {
+        self.tx_data.clone()
     }
 
     pub async fn send_data(&mut self, target: &str, data: String, kind: DescriptionType) -> Result<(), anyhow::Error> {
@@ -150,6 +172,16 @@ impl Client {
             );
             let data = serde_json::to_string::<SignalMessage>(&msg).unwrap();
             write.send(Message::Text(data.into())).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
+    }
+
+    pub async fn send_ping(&mut self, data: &str) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            let data = data.to_string();
+            write.send(Message::Ping(data.into())).await?;
         } else {
             return Err(anyhow!("write is None"));
         }

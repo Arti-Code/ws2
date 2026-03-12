@@ -6,7 +6,6 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
 use signaler::command::{DescriptionType, SignalMessage};
 use std::collections::HashMap;
-use colored::*;
 
 type Peers = Arc<RwLock<HashMap<SocketAddr, Peer>>>;
 
@@ -15,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init();
     let addr = "0.0.0.0:8080";
     let listener = TcpListener::bind(&addr).await?;
-    println!("{}{}", "listening on: ".to_string().bold().bright_green(), addr.bold().bright_green());
+    println!("{}{}", "listening on: ", addr);
     let clients: Peers = Arc::new(RwLock::new(HashMap::new()));
     while let Ok((stream, addr)) = listener.accept().await {
         tokio::spawn(handle_connection(stream, addr, clients.clone()));
@@ -25,12 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers) 
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let s = format!("{}{}", "new connection: ".green().bold(), addr.to_string().green().bold());
+    let s = format!("{}{}", "new connection: ", addr.to_string());
     println!("{}", s);
     let ws_stream = accept_async(stream).await?;
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let client=  Peer::new(tx, false);
+    let client = Peer::new(tx, false);
     clients.write().await.insert(addr, client);
 
     let send_task = tokio::spawn(async move {
@@ -51,13 +50,15 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                     Ok(cmd) => {
                         match cmd {
                             SignalMessage::Register(name) => {
-                                clients.write().await.entry(addr).and_modify(|c| c.set_name(name.as_str()));
-                                s = format!("{}{}{}", sender.bold(), "registered as ".to_string().yellow(), name.bold().yellow());
+                                clients.write().await.entry(addr)
+                                .and_modify(|c| c.set_name(name.as_str()));
+                                s = format!("{}{}{}", sender, "registered as ".to_string(), name);
                                 println!("{}", s);
                             },
                             SignalMessage::SetLogger => {
-                                clients.write().await.entry(addr).and_modify(|c| c.set_logger(true));
-                                s = format!("{}{}", sender.bold(), "set as logger".yellow());
+                                clients.write().await.entry(addr)
+                                .and_modify(|c| c.set_logger(true));
+                                s = format!("{}{}", sender, "set as logger");
                                 println!("{}", s);
                             },
                             SignalMessage::SessionDescription(sdp) => {
@@ -71,7 +72,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
-                                            s = format!("{}{}{}{}{}", sender.bold(), " ==".to_string(), kind, "==> ".to_string(), target.bold());
+                                            s = format!("{}{}{}{}{}", sender, " ==".to_string(), kind, "==> ".to_string(), target);
                                             println!("{}", s);
                                             break;
                                         }
@@ -79,7 +80,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                 }
                             },
                             SignalMessage::Echo(echo) => {
-                                s = format!("{}{}", sender.bold(), echo.to_string());
+                                s = format!("{}{}", sender, echo.to_string());
                                 println!("{}", s);
                                 send_message(&clients, Message::Text(echo.into()), addr).await;
                             },
@@ -90,7 +91,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                     if let Some(client_name) = client.name() {
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text_msg.message.into()), *addr).await;
-                                            s = format!("{}{}{}", sender.bold(), " ==[message]==> ".to_string(), target.bold());
+                                            s = format!("{}{}{}", sender, " ==[message]==> ".to_string(), target);
                                             println!("{}", s);
                                             break;
                                         }
@@ -100,34 +101,34 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                         }
                     },
                     Err(_) => {
-                        s = format!("{}{}", sender.bold(), text.to_string());
+                        s = format!("{}{}", sender, text.to_string());
                         println!("{}", s);
                         send_message(&clients, Message::Text(text), addr).await;
                     }
                 }
             }
             Ok(Message::Binary(bin)) => {
-                s = format!("{}[BYTES] {}", sender.bold(), bin.len());
+                s = format!("{}[BYTES] {}", sender, bin.len());
                 println!("{}", s);
                 send_message(&clients, Message::Binary(bin), addr).await;
             }
             Ok(Message::Close(_)) => {
-                s = format!("{}{}", sender.bold(), "disconnected".red().bold());
+                s = format!("{}{}", sender, "disconnected");
                 println!("{}", s);
                 break;
             }
             Ok(Message::Ping(data)) => {
-                s = format!("{}{}", sender.bold(), "ping".blue().bold());
+                s = format!("{}{}", sender, "ping");
                 if let Some(tx) = clients.read().await.get(&addr) {
                     tx.send(Message::Pong(data)).ok();
                 }
             }
             Ok(Message::Pong(_)) => {
-                s = format!("{}{}", sender.bold(), "pong".blue().bold());
+                s = format!("{}{}", sender, "pong");
             }
             Ok(Message::Frame(frame)) => {
                 if let Ok(text) = frame.into_text() {
-                    s = format!("{}[FRAME] {}", sender.bold(), text.to_string());
+                    s = format!("{}[FRAME] {}", sender, text.to_string());
                     println!("{}", s);
                     if let Some(tx) = clients.read().await.get(&addr) {
                         tx.send(Message::Text(text)).ok();
@@ -135,7 +136,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                 }
             }
             Err(e) => {
-                s = format!("{}{}", sender.bold().red(), e);
+                s = format!("{}{}", sender, e);
                 println!("{}", s);
                 break;
             }
@@ -143,7 +144,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
         if !s.is_empty() { broadcast_log(&clients, &s.clone()).await; }
     }
 
-    let s = format!("{}{}", sender.bold(), "removed".to_string().bright_red());
+    let s = format!("{}{}", sender, "removed".to_string());
     broadcast_log(&clients, &s.clone()).await;
     println!("{}", s);
     send_task.abort();
@@ -173,9 +174,9 @@ fn init() {
     let mut version = String::from("version: ");
     version.push_str(std::env!("CARGO_PKG_VERSION"));
     let author= std::env!("CARGO_PKG_AUTHORS");
-    println!("{}", "-=SIGNALING SERVER=-".to_string().bold().underline().cyan());
-    println!("{}", version.cyan());
-    println!("{}", author.blue());
+    println!("{}", "-=SIGNALING SERVER=-".to_string());
+    println!("{}", version);
+    println!("{}", author);
     println!("");
 }
 
