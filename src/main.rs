@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use anyhow::anyhow;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -50,9 +51,12 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                     Ok(cmd) => {
                         match cmd {
                             SignalMessage::Register(name) => {
-                                clients.write().await.entry(addr)
-                                .and_modify(|c| c.set_name(name.as_str()));
-                                s = format!("{}{}{}", sender, "registered as ".to_string(), name);
+                                //clients.write().await.entry(addr)
+                                //.and_modify(|c| c.set_name(name.as_str()));
+                                s = match register_peer(clients.clone(), addr, name.as_str()).await {
+                                    Ok(_) => format!("{}{}{}", sender, "registered as ".to_string(), name),
+                                    Err(e) => format!("{}", e.to_string()),
+                                };
                                 println!("{}", s);
                             },
                             SignalMessage::SetLogger => {
@@ -178,6 +182,22 @@ fn init() {
     println!("{}", version);
     println!("{}", author);
     println!("");
+}
+
+async fn register_peer(clients: Peers, addr: SocketAddr, peer_name: &str) -> anyhow::Result<()> {
+    for (_, peer) in clients.read().await.iter() {
+        match peer.name() {
+            None => { continue; },
+            Some(name) => {
+                if name == peer_name.to_string() {
+                    return Err(anyhow!("other peer already registered as {:?}", peer_name));
+                }
+            },
+        }
+    }
+    clients.write().await.entry(addr)
+    .and_modify(|c| c.set_name(peer_name));
+    Ok(())
 }
 
 struct Peer {
