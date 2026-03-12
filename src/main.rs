@@ -55,7 +55,11 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                 //.and_modify(|c| c.set_name(name.as_str()));
                                 s = match register_peer(clients.clone(), addr, name.as_str()).await {
                                     Ok(_) => format!("{}{}{}", sender, "registered as ".to_string(), name),
-                                    Err(e) => format!("{}", e.to_string()),
+                                    Err(e) => {
+                                        eprintln!("{}", e.to_string());
+                                        send_message(&clients, Message::Close(None), addr).await;
+                                        break;
+                                    },
                                 };
                                 println!("{}", s);
                             },
