@@ -1,4 +1,5 @@
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::unbounded_channel;
 use tokio_tungstenite::{
     MaybeTlsStream, 
     WebSocketStream, 
@@ -45,7 +46,7 @@ impl Client {
         let data = serde_json::to_string::<SignalMessage>(&msg).unwrap();
         write.send(Message::Text(data.into())).await?;
         self.write = Some(write);
-        let (tx_str, rx_str) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx_str, rx_str) = unbounded_channel::<String>();
         self.rx_data = Some(rx_str);
         self.tx_data = Some(tx_str.clone());
         tokio::spawn(async move {
@@ -67,6 +68,17 @@ impl Client {
             },
             None => Err(anyhow!("connection lost")),
         }
+    }
+
+    pub async fn request_peer_list(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(ref mut write) = self.write {
+            let msg = SignalMessage::GetPeerList(self.name.clone());
+            let data = serde_json::to_string::<SignalMessage>(&msg).unwrap();
+            write.send(Message::Text(data.into())).await?;
+        } else {
+            return Err(anyhow!("write is None"));
+        }
+        Ok(())
     }
 
     pub async fn wait_data(&mut self) -> Result<SessionDescription, anyhow::Error> {
@@ -107,7 +119,8 @@ impl Client {
         self.tx_data.clone()
     }
 
-    pub async fn send_data(&mut self, target: &str, data: String, kind: DescriptionType) -> Result<(), anyhow::Error> {
+    pub async fn send_data(&mut self, target: &str, data: String, kind: DescriptionType, conn_type: ConnectionType) 
+    -> Result<(), anyhow::Error> {
         if let Some(ref mut write) = self.write {
             let answer = SignalMessage::SessionDescription(
                 SessionDescription {
@@ -115,6 +128,7 @@ impl Client {
                     target: target.to_string(),
                     description: data.clone(),
                     kind,
+                    connection_type: conn_type,
                 }
             );
             let data = serde_json::to_string::<SignalMessage>(&answer).unwrap();

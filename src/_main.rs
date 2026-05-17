@@ -7,7 +7,7 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
 use signaler::command::{DescriptionType, SignalMessage};
 use std::collections::HashMap;
-use chrono::prelude::*;
+
 type Peers = Arc<RwLock<HashMap<SocketAddr, Peer>>>;
 
 #[tokio::main]
@@ -25,8 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers) 
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let s = format!("{}: {}{}", "new connection: ", now(), addr.to_string());
-    println!("{}: {}", now(), s);
+    let s = format!("{}{}", "new connection: ", addr.to_string());
+    println!("{}", s);
     let ws_stream = accept_async(stream).await?;
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -61,13 +61,13 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                         break;
                                     },
                                 };
-                                println!("{}: {}", now(), s);
+                                println!("{}", s);
                             },
                             SignalMessage::SetLogger => {
                                 clients.write().await.entry(addr)
                                 .and_modify(|c| c.set_logger(true));
                                 s = format!("{}{}", sender, "set as logger");
-                                println!("{}: {}", now(), s);
+                                println!("{}", s);
                             },
                             SignalMessage::SessionDescription(sdp) => {
                                 let target = sdp.target;
@@ -81,7 +81,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text), *addr).await;
                                             s = format!("{}{}{}{}{}", sender, " ==".to_string(), kind, "==> ".to_string(), target);
-                                            println!("{}: {}", now(), s);
+                                            println!("{}", s);
                                             break;
                                         }
                                     }
@@ -89,7 +89,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                             },
                             SignalMessage::Echo(echo) => {
                                 s = format!("{}{}", sender, echo.to_string());
-                                println!("{}: {}", now(), s);
+                                println!("{}", s);
                                 send_message(&clients, Message::Text(echo.into()), addr).await;
                             },
                             SignalMessage::Text(text_msg) => {
@@ -100,44 +100,41 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
                                         if target == client_name {
                                             send_message(&clients, Message::Text(text_msg.message.into()), *addr).await;
                                             s = format!("{}{}{}", sender, " ==[message]==> ".to_string(), target);
-                                            println!("{}: {}", now(), s);
+                                            println!("{}", s);
                                             break;
                                         }
                                     }
                                 }
                             },
                             SignalMessage::GetPeerList(name) => {
-                                let mut peer_list = Vec::new();
                                 let client_list = clients.read().await;
-                                for (_, client) in client_list.iter() {
+                                print!(" | ");
+                                for (client_addr, client) in client_list.iter() {
                                     if let Some(client_name) = client.name() {
                                         if client.is_logger() || client_name == name { continue; }
-                                        peer_list.push(client_name);
+                                        print!("{} |", client_name);
                                     }
                                 }
-                                println!("{}: {}{}", now(), sender, "peer list request".to_string());
-                                println!("{}", peer_list.join(", "));
-                                let msg = serde_json::to_string(&SignalMessage::PeerList(peer_list)).unwrap();
-                                send_message(&clients, Message::Text(msg.into()), addr).await;
+                                println!(" | ");
                             }
                             _ => {},
                         }
                     },
                     Err(_) => {
                         s = format!("{}{}", sender, text.to_string());
-                        println!("{}: {}", now(), s);
+                        println!("{}", s);
                         send_message(&clients, Message::Text(text), addr).await;
                     }
                 }
             }
             Ok(Message::Binary(bin)) => {
                 s = format!("{}[BYTES] {}", sender, bin.len());
-                println!("{}: {}", now(), s);
+                println!("{}", s);
                 send_message(&clients, Message::Binary(bin), addr).await;
             }
             Ok(Message::Close(_)) => {
                 s = format!("{}{}", sender, "disconnected");
-                println!("{}: {}", now(), s);
+                println!("{}", s);
                 break;
             }
             Ok(Message::Ping(data)) => {
@@ -152,7 +149,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
             Ok(Message::Frame(frame)) => {
                 if let Ok(text) = frame.into_text() {
                     s = format!("{}[FRAME] {}", sender, text.to_string());
-                    println!("{}: {}", now(), s);
+                    println!("{}", s);
                     if let Some(tx) = clients.read().await.get(&addr) {
                         tx.send(Message::Text(text)).ok();
                     }
@@ -160,7 +157,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
             }
             Err(e) => {
                 s = format!("{}{}", sender, e);
-                println!("{}: {}", now(), s);
+                println!("{}", s);
                 break;
             }
         }
@@ -169,7 +166,7 @@ async fn handle_connection(stream: TcpStream, addr: SocketAddr, clients: Peers)
 
     let s = format!("{}{}", sender, "removed".to_string());
     broadcast_log(&clients, &s.clone()).await;
-    println!("{}: {}", now(), s);
+    println!("{}", s);
     send_task.abort();
     clients.write().await.remove(&addr);
     Ok(())
@@ -201,11 +198,6 @@ fn init() {
     println!("{}", version);
     println!("{}", author);
     println!("");
-}
-
-fn now() -> String {
-    let now: DateTime<Local> = Local::now();
-    now.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 async fn register_peer(clients: Peers, addr: SocketAddr, peer_name: &str) -> anyhow::Result<()> {
